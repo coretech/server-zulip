@@ -7,6 +7,7 @@ from collections import defaultdict
 from typing import Any, Callable, Dict, Generic, List, Mapping, Optional, Set, TypeVar, Union
 
 import orjson
+import ssl
 import pika
 import pika.adapters.tornado_connection
 import pika.connection
@@ -79,6 +80,8 @@ class QueueClient(Generic[ChannelT], metaclass=ABCMeta):
         return pika.ConnectionParameters(
             settings.RABBITMQ_HOST,
             port=5671,
+            ssl=True,
+            ssl_options=dict(ssl_version=ssl.PROTOCOL_TLSv1_2),
             heartbeat=self.rabbitmq_heartbeat,
             tcp_options=tcp_options,
             credentials=credentials,
