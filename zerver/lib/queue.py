@@ -77,11 +77,14 @@ class QueueClient(Generic[ChannelT], metaclass=ABCMeta):
         if self.rabbitmq_heartbeat == 0:
             tcp_options = dict(TCP_KEEPIDLE=60 * 5)
 
+        # SSL Context for TLS configuration of Amazon MQ for RabbitMQ
+        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+        ssl_context.set_ciphers('ECDHE+AESGCM:!ECDSA')
+
         return pika.ConnectionParameters(
             settings.RABBITMQ_HOST,
-            port=5671,
             ssl=True,
-            ssl_options=dict(ssl_version=ssl.PROTOCOL_TLSv1_2),
+            ssl_options=pika.SSLOptions(context=ssl_context),
             heartbeat=self.rabbitmq_heartbeat,
             tcp_options=tcp_options,
             credentials=credentials,
