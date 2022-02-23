@@ -78,6 +78,7 @@ class QueueClient(Generic[ChannelT], metaclass=ABCMeta):
 
         return pika.ConnectionParameters(
             settings.RABBITMQ_HOST,
+            port=5671,
             heartbeat=self.rabbitmq_heartbeat,
             tcp_options=tcp_options,
             credentials=credentials,
