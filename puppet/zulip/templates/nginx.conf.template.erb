@@ -20,11 +20,6 @@ http {
     types_hash_max_size 2048;
     client_max_body_size 80m;
 
-    proxy_buffering off;
-    proxy_buffer_size 16k;
-    proxy_busy_buffers_size 24k;
-    proxy_buffers 64 4k;
-
     include /etc/nginx/mime.types;
     default_type application/octet-stream;
 
