@@ -1,5 +1,6 @@
 import logging
 import random
+import ssl
 import threading
 import time
 from abc import ABCMeta, abstractmethod
@@ -7,7 +8,6 @@ from collections import defaultdict
 from typing import Any, Callable, Dict, Generic, List, Mapping, Optional, Set, TypeVar, Union
 
 import orjson
-import ssl
 import pika
 import pika.adapters.tornado_connection
 import pika.connection
@@ -77,18 +77,26 @@ class QueueClient(Generic[ChannelT], metaclass=ABCMeta):
         if self.rabbitmq_heartbeat == 0:
             tcp_options = dict(TCP_KEEPIDLE=60 * 5)
 
-        # SSL Context for TLS configuration of Amazon MQ for RabbitMQ
-        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
-        ssl_context.set_ciphers('ECDHE+AESGCM:!ECDSA')
+        if settings.DEBUG:
+            return pika.ConnectionParameters(
+                settings.RABBITMQ_HOST,
+                heartbeat=self.rabbitmq_heartbeat,
+                tcp_options=tcp_options,
+                credentials=credentials,
+            )
+        else:
+            # SSL Context for TLS configuration of Amazon MQ for RabbitMQ
+            ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+            ssl_context.set_ciphers('ECDHE+AESGCM:!ECDSA')
 
-        return pika.ConnectionParameters(
-            settings.RABBITMQ_HOST,
-            port=5671,
-            ssl_options=pika.SSLOptions(context=ssl_context),
-            heartbeat=self.rabbitmq_heartbeat,
-            tcp_options=tcp_options,
-            credentials=credentials,
-        )
+            return pika.ConnectionParameters(
+                settings.RABBITMQ_HOST,
+                port=5671,
+                ssl_options=pika.SSLOptions(context=ssl_context),
+                heartbeat=self.rabbitmq_heartbeat,
+                tcp_options=tcp_options,
+                credentials=credentials,
+            )
 
     def _generate_ctag(self, queue_name: str) -> str:
         return f"{queue_name}_{str(random.getrandbits(16))}"
