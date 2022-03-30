@@ -1,3 +1,6 @@
+import jwt
+from jwt import PyJWKClient
+
 import base64
 import datetime
 import logging
@@ -31,6 +34,7 @@ from zerver.lib.exceptions import (
     AnomalousWebhookPayload,
     ErrorCode,
     InvalidAPIKeyError,
+    MissingAuthenticationError,
     InvalidAPIKeyFormatError,
     InvalidJSONError,
     JsonableError,
@@ -52,7 +56,7 @@ from zerver.lib.subdomains import get_subdomain, user_matches_subdomain
 from zerver.lib.timestamp import datetime_to_timestamp, timestamp_to_datetime
 from zerver.lib.types import ViewFuncT
 from zerver.lib.utils import has_api_key_format, statsd
-from zerver.models import Realm, UserProfile, get_client, get_user_profile_by_api_key
+from zerver.models import Realm, UserProfile, get_client, get_user_profile_by_api_key, get_active_user, get_realm
 
 if settings.ZILENCER_ENABLED:
     from zilencer.models import (
@@ -268,6 +272,52 @@ def validate_api_key(
 
     return user_profile
 
+def validate_jwt_token(
+    request: HttpRequest,
+    jwt_token: str,
+    allow_webhook_access: bool = False,
+    client_name: Optional[str] = None,
+) -> UserProfile:
+    # eyJhbGciOiJSUzI1NiIsImtpZCI6IjU0M0E5MEI5RERGQzZCRTBGM0NBMUNCNkI4ODc3ODI2NzBGMDUzMkZSUzI1NiIsInR5cCI6ImF0K2p3dCIsIng1dCI6IlZEcVF1ZDM4YS1EenloeTJ1SWQ0Sm5Ed1V5OCJ9.eyJuYmYiOjE2NDg2MzM2MzcsImV4cCI6MTY0ODYzNzI5NywiaXNzIjoiaHR0cHM6Ly9hdXRoLXFhLm5ldDJwaG9uZS5jb20iLCJhdWQiOiJodWRkbGUiLCJjbGllbnRfaWQiOiJodWRkbGUiLCJzdWIiOiIwYmI5OTU0Yi0zZWVhLTQ5NTctYTA4My01MzBmYjIyM2I3YWQiLCJhdXRoX3RpbWUiOjE2NDg1NDQzNDEsImlkcCI6Im4ycC5hdXRoLnNlcnZlciIsImVtYWlsIjoiYW5kcmV3LmNodWhsb21pbisxQGlkdC5uZXQiLCJuYW1lIjoiVG9ueSBTdGFyayIsInRpZCI6MiwiY2lkIjoyNDU4NCwibm9kZS5pZCI6MTEsImFpZCI6MzY4NjM4LCJ1aWQiOjEyNjczODQsInVuaXRlLnJvbGUiOiJyZWd1bGFyIiwiZXh0IjoiMjAyIiwidW5pdGUudG9rZW5fbGV2ZWwiOiJ1c2VyIiwibm9kZS5raW5kIjoidW5pdGUiLCJub2RlLnVybCI6Imh0dHBzOi8vcWEubmV0MnBob25lLmNvbSIsInNpZCI6IjlBMUE2RDA4N0YwNDc5RkE2N0JFQTdCQ0MxMEJBRjVFIiwiaWF0IjoxNjQ4NjMzNjk3LCJzY29wZSI6WyJodWRkbGUiLCJvZmZsaW5lX2FjY2VzcyJdLCJhbXIiOlsiZXh0ZXJuYWwiXSwicG9saWNpZXMiOlt7InBlcm1pc3Npb24iOiJodWRkbGUuKiJ9XX0.P7Agk0m3pzUIfVtE0n1ECZG7Iz7Mqdoqi0PEZAUfl_uPc1z-69-6mwWwcw0PQ2T47Loe0pg5Gxh5IJ_-795Kk-FsMsVcYgYHWWfZQowcpA3fm3nbHPSK41XYMRCq4hEs1VvD_FUw1QQ7eAMO7XShaTagp7ium2ZJcQ3Lv20PMUp4sq7Ug1q3AjQq4xMeml9DPAWnU9r_r5j2NqNOT3qKdsUY8Duby5Lyla40Mj4EC5zwJ6XM-VGuSqJlTW6AvomDhD1qtqP-4KP6OIrcAGeuQH2Z7lThUzuEDoDfywdGj5X1BEwEOQvFFFVEkqUnr5vJqUoYYe3Z09vVX4RCTGSg4A
+
+    # todo Move it to SSM
+    AUTH_SERVICE_HOSTNAME = "auth-qa.net2phone.com"
+    url = f"https://{AUTH_SERVICE_HOSTNAME}/.well-known/openid-configuration/jwks"
+    jwks_client = PyJWKClient(url)
+    signing_key = jwks_client.get_signing_key_from_jwt(jwt_token)
+
+    try:
+        data = jwt.decode(
+            jwt_token,
+            signing_key.key,
+            algorithms=[
+                "RS256",
+            ],
+            options={
+                "verify_signature": True,
+                "verify_nbf": False,
+                "verify_aud": False,
+            },
+        )
+    except jwt.PyJWTError as err:
+        print(err)
+        raise JsonableError(_("Invalid jwt."))
+
+    email = data.get("email")
+    # email = "user7@zulipdev.com"
+    # todo map realm_id on jwt data
+    realm_id = "zulip"
+
+    user_profile = access_user_by_email_and_realm(request, email, realm_id)
+
+    if user_profile.is_incoming_webhook and not allow_webhook_access:
+        raise JsonableError(_("This API is not available to incoming webhook bots."))
+
+    request.user = user_profile
+    process_client(request, user_profile, client_name=client_name)
+
+    return user_profile
+
 
 def validate_account_and_subdomain(request: HttpRequest, user_profile: UserProfile) -> None:
     if user_profile.realm.deactivated:
@@ -306,6 +356,29 @@ def access_user_by_api_key(
         # different user.  We may end up wanting to relaxing this
         # constraint or give a different error message in the future.
         raise InvalidAPIKeyError()
+
+    validate_account_and_subdomain(request, user_profile)
+
+    return user_profile
+
+
+def access_user_by_email_and_realm(
+    request: HttpRequest,
+    email: str,
+    realm_id: str,
+) -> UserProfile:
+    try:
+        realm = get_realm(realm_id)
+    except Realm.DoesNotExist:
+        raise MissingAuthenticationError()
+
+    try:
+        user_profile = get_active_user(email, realm)
+    except UserProfile.DoesNotExist:
+        # todo what is delivery_email for?
+        user_profile = UserProfile.objects.create(
+            realm=realm, email=email, delivery_email=email, is_bot=False
+        )
 
     validate_account_and_subdomain(request, user_profile)
 
@@ -667,32 +740,35 @@ def authenticated_rest_api_view(
         def _wrapped_func_arguments(
             request: HttpRequest, *args: object, **kwargs: object
         ) -> HttpResponse:
-            # First try block attempts to get the credentials we need to do authentication
             try:
-                # Grab the base64-encoded authentication string, decode it, and split it into
-                # the email and API key
-                auth_type, credentials = request.META["HTTP_AUTHORIZATION"].split()
-                # case insensitive per RFC 1945
-                if auth_type.lower() != "basic":
-                    raise JsonableError(_("This endpoint requires HTTP basic authentication."))
-                role, api_key = base64.b64decode(credentials).decode().split(":")
-            except ValueError:
-                return json_unauthorized(_("Invalid authorization header for basic auth"))
-            except KeyError:
-                return json_unauthorized(_("Missing authorization header for basic auth"))
+                auth_type, token = request.META["HTTP_AUTHORIZATION"].split()
 
-            # Now we try to do authentication or die
-            try:
-                # profile is a Union[UserProfile, RemoteZulipServer]
-                profile = validate_api_key(
-                    request,
-                    role,
-                    api_key,
-                    allow_webhook_access=allow_webhook_access,
-                    client_name=full_webhook_client_name(webhook_client_name),
-                )
+                if auth_type == "Bearer":
+                    profile = validate_jwt_token(
+                        request,
+                        jwt_token = token,
+                        allow_webhook_access=allow_webhook_access,
+                        client_name=full_webhook_client_name(webhook_client_name),
+                    )
+                # case insensitive per RFC 1945
+                elif auth_type.lower() == "basic":
+                    role, api_key = base64.b64decode(token).decode().split(":")
+                    profile = validate_api_key(
+                        request,
+                        role,
+                        api_key,
+                        allow_webhook_access=allow_webhook_access,
+                        client_name=full_webhook_client_name(webhook_client_name),
+                    )
+                else:
+                    raise JsonableError(_("This endpoint requires authentication."))
+            except ValueError:
+                return json_unauthorized(_("Invalid authorization header"))
+            except KeyError:
+                return json_unauthorized(_("Missing authorization header"))
             except JsonableError as e:
                 return json_unauthorized(e.msg)
+
             try:
                 if not skip_rate_limiting:
                     # Apply rate limiting
