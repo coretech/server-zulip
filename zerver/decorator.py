@@ -278,8 +278,6 @@ def validate_jwt_token(
     allow_webhook_access: bool = False,
     client_name: Optional[str] = None,
 ) -> UserProfile:
-    # eyJhbGciOiJSUzI1NiIsImtpZCI6IjU0M0E5MEI5RERGQzZCRTBGM0NBMUNCNkI4ODc3ODI2NzBGMDUzMkZSUzI1NiIsInR5cCI6ImF0K2p3dCIsIng1dCI6IlZEcVF1ZDM4YS1EenloeTJ1SWQ0Sm5Ed1V5OCJ9.eyJuYmYiOjE2NDg2MzM2MzcsImV4cCI6MTY0ODYzNzI5NywiaXNzIjoiaHR0cHM6Ly9hdXRoLXFhLm5ldDJwaG9uZS5jb20iLCJhdWQiOiJodWRkbGUiLCJjbGllbnRfaWQiOiJodWRkbGUiLCJzdWIiOiIwYmI5OTU0Yi0zZWVhLTQ5NTctYTA4My01MzBmYjIyM2I3YWQiLCJhdXRoX3RpbWUiOjE2NDg1NDQzNDEsImlkcCI6Im4ycC5hdXRoLnNlcnZlciIsImVtYWlsIjoiYW5kcmV3LmNodWhsb21pbisxQGlkdC5uZXQiLCJuYW1lIjoiVG9ueSBTdGFyayIsInRpZCI6MiwiY2lkIjoyNDU4NCwibm9kZS5pZCI6MTEsImFpZCI6MzY4NjM4LCJ1aWQiOjEyNjczODQsInVuaXRlLnJvbGUiOiJyZWd1bGFyIiwiZXh0IjoiMjAyIiwidW5pdGUudG9rZW5fbGV2ZWwiOiJ1c2VyIiwibm9kZS5raW5kIjoidW5pdGUiLCJub2RlLnVybCI6Imh0dHBzOi8vcWEubmV0MnBob25lLmNvbSIsInNpZCI6IjlBMUE2RDA4N0YwNDc5RkE2N0JFQTdCQ0MxMEJBRjVFIiwiaWF0IjoxNjQ4NjMzNjk3LCJzY29wZSI6WyJodWRkbGUiLCJvZmZsaW5lX2FjY2VzcyJdLCJhbXIiOlsiZXh0ZXJuYWwiXSwicG9saWNpZXMiOlt7InBlcm1pc3Npb24iOiJodWRkbGUuKiJ9XX0.P7Agk0m3pzUIfVtE0n1ECZG7Iz7Mqdoqi0PEZAUfl_uPc1z-69-6mwWwcw0PQ2T47Loe0pg5Gxh5IJ_-795Kk-FsMsVcYgYHWWfZQowcpA3fm3nbHPSK41XYMRCq4hEs1VvD_FUw1QQ7eAMO7XShaTagp7ium2ZJcQ3Lv20PMUp4sq7Ug1q3AjQq4xMeml9DPAWnU9r_r5j2NqNOT3qKdsUY8Duby5Lyla40Mj4EC5zwJ6XM-VGuSqJlTW6AvomDhD1qtqP-4KP6OIrcAGeuQH2Z7lThUzuEDoDfywdGj5X1BEwEOQvFFFVEkqUnr5vJqUoYYe3Z09vVX4RCTGSg4A
-
     # todo Move it to SSM
     AUTH_SERVICE_HOSTNAME = "auth-qa.net2phone.com"
     url = f"https://{AUTH_SERVICE_HOSTNAME}/.well-known/openid-configuration/jwks"
@@ -304,7 +302,6 @@ def validate_jwt_token(
         raise JsonableError(_("Invalid jwt."))
 
     email = data.get("email")
-    # email = "user7@zulipdev.com"
     # todo map realm_id on jwt data
     realm_id = "zulip"
 
